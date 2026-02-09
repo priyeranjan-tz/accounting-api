@@ -107,6 +107,24 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 
 // ============================================================================
+// T146: Configure CORS for cross-origin requests from frontend
+// ============================================================================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://localhost:4200",    // Angular frontend (local development)
+                "http://localhost:3000"     // React frontend (local development)
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+});
+
+// ============================================================================
 // T138: Configure Swagger/OpenAPI with comprehensive documentation
 // ============================================================================
 builder.Services.AddSwaggerGen(options =>
@@ -254,6 +272,9 @@ app.UseSerilogRequestLogging(options =>
     };
 });
 
+// T146: Enable CORS for frontend applications
+app.UseCors("AllowFrontend");
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -324,7 +345,7 @@ app.MapAccountEndpoints();
 app.MapInvoiceEndpoints();
 
 // ============================================================================
-// Database initialization - Apply migrations on startup
+// Database initialization - Ensure database exists and schema created
 // ============================================================================
 using (var scope = app.Services.CreateScope())
 {
@@ -332,13 +353,17 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = services.GetRequiredService<AccountingDbContext>();
-        Log.Information("Applying database migrations...");
-        dbContext.Database.Migrate();
-        Log.Information("Database migrations applied successfully");
+        
+        // Ensure the database exists and schema is created
+        // EnsureCreated() creates the database and all tables from the current model
+        // This is the recommended approach for development when using a design-time factory
+        Log.Information("Ensuring database and schema exist...");
+        dbContext.Database.EnsureCreated();
+        Log.Information("Database and schema verified/created successfully");
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "An error occurred while migrating the database");
+        Log.Error(ex, "An error occurred while initializing the database");
         throw;
     }
 }
