@@ -1,0 +1,396 @@
+openapi: 3.0.3
+info:
+  title: Accounting Service - Accounts API
+  description: Account management endpoints for creating and managing customer accounts (organizations and individuals)
+  version: 1.0.0
+  contact:
+    name: Platform Team
+
+servers:
+  - url: https://api.platform.example.com/accounting/v1
+    description: Production
+  - url: https://api-dev.platform.example.com/accounting/v1
+    description: Development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /accounts:
+    post:
+      summary: Create a new account
+      description: Creates a new customer account (organization or individual) for the authenticated tenant
+      operationId: createAccount
+      tags:
+        - Accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+            examples:
+              organization:
+                summary: Create organization account
+                value:
+                  name: "Metro Rehab Center"
+                  accountType: "Organization"
+                  status: "Active"
+              individual:
+                summary: Create individual account
+                value:
+                  name: "John Doe"
+                  accountType: "Individual"
+                  status: "Active"
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Account with this name already exists for tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: "https://api.platform.example.com/problems/conflict"
+                title: "Account Already Exists"
+                status: 409
+                detail: "An account with name 'Metro Rehab Center' already exists for this tenant"
+                traceId: "00-abc123-def456-01"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      summary: List accounts
+      description: Retrieves all accounts for the authenticated tenant with optional filtering
+      operationId: listAccounts
+      tags:
+        - Accounts
+      parameters:
+        - name: status
+          in: query
+          description: Filter by account status
+          required: false
+          schema:
+            type: string
+            enum: [Active, Inactive]
+        - name: accountType
+          in: query
+          description: Filter by account type
+          required: false
+          schema:
+            type: string
+            enum: [Organization, Individual]
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Number of accounts per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccountResponse'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /accounts/{accountId}:
+    get:
+      summary: Get account by ID
+      description: Retrieves details of a specific account
+      operationId: getAccount
+      tags:
+        - Accounts
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update account status
+      description: Updates the status of an account (activate or deactivate)
+      operationId: updateAccountStatus
+      tags:
+        - Accounts
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountStatusRequest'
+      responses:
+        '200':
+          description: Account updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token with tenant_id claim for multi-tenant isolation
+
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: Unique account identifier (UUID)
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CreateAccountRequest:
+      type: object
+      required:
+        - name
+        - accountType
+        - status
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Account display name
+          example: "Metro Rehab Center"
+        accountType:
+          type: string
+          enum: [Organization, Individual]
+          description: Type of account
+          example: "Organization"
+        status:
+          type: string
+          enum: [Active, Inactive]
+          description: Initial account status (typically Active)
+          example: "Active"
+
+    UpdateAccountStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [Active, Inactive]
+          description: New account status
+          example: "Inactive"
+
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique account identifier
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        name:
+          type: string
+          description: Account display name
+          example: "Metro Rehab Center"
+        accountType:
+          type: string
+          enum: [Organization, Individual]
+          description: Type of account
+          example: "Organization"
+        status:
+          type: string
+          enum: [Active, Inactive]
+          description: Current account status
+          example: "Active"
+        currency:
+          type: string
+          description: Account currency (always USD)
+          example: "USD"
+        balance:
+          type: number
+          format: decimal
+          description: Current account balance (calculated)
+          example: 125.50
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when account was created
+          example: "2026-02-06T14:30:00Z"
+        createdBy:
+          type: string
+          description: User who created the account
+          example: "john.doe@example.com"
+        modifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: UTC timestamp of last modification
+          example: "2026-02-07T10:15:00Z"
+        modifiedBy:
+          type: string
+          nullable: true
+          description: User who last modified the account
+          example: "jane.smith@example.com"
+
+    PaginationMetadata:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Current page number (1-indexed)
+          example: 1
+        pageSize:
+          type: integer
+          description: Number of items per page
+          example: 20
+        totalCount:
+          type: integer
+          description: Total number of items across all pages
+          example: 47
+        totalPages:
+          type: integer
+          description: Total number of pages
+          example: 3
+
+    ProblemDetails:
+      type: object
+      description: RFC 9457 Problem Details for HTTP APIs
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference identifying the problem type
+          example: "https://api.platform.example.com/problems/validation-error"
+        title:
+          type: string
+          description: Short, human-readable summary of the problem
+          example: "Validation Failed"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: "Account name is required and cannot be empty"
+        traceId:
+          type: string
+          description: Correlation ID for tracing the request
+          example: "00-abc123def456-789-01"
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Validation errors by field
+          example:
+            name: ["Account name is required"]
+
+  responses:
+    ValidationError:
+      description: Validation error - request data is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: "https://api.platform.example.com/problems/validation-error"
+            title: "Validation Failed"
+            status: 400
+            detail: "One or more validation errors occurred"
+            traceId: "00-abc123-def456-01"
+            errors:
+              name: ["Account name is required"]
+              accountType: ["Must be 'Organization' or 'Individual'"]
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: "https://api.platform.example.com/problems/unauthorized"
+            title: "Unauthorized"
+            status: 401
+            detail: "Missing or invalid JWT token"
+            traceId: "00-abc123-def456-01"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: "https://api.platform.example.com/problems/not-found"
+            title: "Not Found"
+            status: 404
+            detail: "Account with ID 'a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d' not found"
+            traceId: "00-abc123-def456-01"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: "https://api.platform.example.com/problems/internal-error"
+            title: "Internal Server Error"
+            status: 500
+            detail: "An unexpected error occurred"
+            traceId: "00-abc123-def456-01"

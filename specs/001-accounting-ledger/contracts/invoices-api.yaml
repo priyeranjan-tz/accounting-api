@@ -1,0 +1,430 @@
+openapi: 3.0.3
+info:
+  title: Accounting Service - Invoices API
+  description: Invoice generation and retrieval for customer billing
+  version: 1.0.0
+  contact:
+    name: Platform Team
+
+servers:
+  - url: https://api.platform.example.com/accounting/v1
+    description: Production
+  - url: https://api-dev.platform.example.com/accounting/v1
+    description: Development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /invoices:
+    post:
+      summary: Generate invoice
+      description: Generates an invoice for an account based on date range or specific ride IDs. Invoices are immutable once created.
+      operationId: generateInvoice
+      tags:
+        - Invoices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateInvoiceRequest'
+            examples:
+              byDateRange:
+                summary: Generate invoice for date range
+                value:
+                  accountId: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+                  billingPeriodStart: "2026-01-01T00:00:00Z"
+                  billingPeriodEnd: "2026-01-31T23:59:59Z"
+              byRideIds:
+                summary: Generate invoice for specific rides
+                value:
+                  accountId: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+                  rideIds: ["R-12345", "R-12346", "R-12350"]
+      responses:
+        '201':
+          description: Invoice generated successfully
+          headers:
+            Location:
+              description: URI of the created invoice
+              schema:
+                type: string
+                format: uri
+              example: "/invoices/inv-2026-001"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '400':
+          description: Validation error or invalid date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: "https://api.platform.example.com/problems/validation-error"
+                title: "Validation Failed"
+                status: 400
+                detail: "billingPeriodEnd must be greater than or equal to billingPeriodStart"
+                traceId: "00-abc123-def456-01"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Account not found or no ledger entries found for criteria
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      summary: List invoices
+      description: Retrieves invoices for the authenticated tenant with optional filtering by account
+      operationId: listInvoices
+      tags:
+        - Invoices
+      parameters:
+        - name: accountId
+          in: query
+          description: Filter invoices by account ID
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: startDate
+          in: query
+          description: Filter invoices generated on or after this date
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Filter invoices generated on or before this date
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Number of invoices per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InvoiceSummaryDto'
+                  pagination:
+                    $ref: '#/components/schemas/PaginationMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invoices/{invoiceNumber}:
+    get:
+      summary: Get invoice by number
+      description: Retrieves full details of a specific invoice including all line items
+      operationId: getInvoice
+      tags:
+        - Invoices
+      parameters:
+        - name: invoiceNumber
+          in: path
+          required: true
+          description: Invoice number (e.g., INV-2026-001)
+          schema:
+            type: string
+            pattern: '^INV-\d{4}-\d{3,}$'
+          example: "INV-2026-001"
+      responses:
+        '200':
+          description: Invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /invoices/{invoiceNumber}/pdf:
+    get:
+      summary: Download invoice as PDF
+      description: Generates and downloads invoice as PDF document (future enhancement - returns 501 Not Implemented in MVP)
+      operationId: downloadInvoicePdf
+      tags:
+        - Invoices
+      parameters:
+        - name: invoiceNumber
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "INV-2026-001"
+      responses:
+        '200':
+          description: Invoice PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Not implemented - PDF generation not available in MVP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    GenerateInvoiceRequest:
+      type: object
+      required:
+        - accountId
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Account to generate invoice for
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        billingPeriodStart:
+          type: string
+          format: date-time
+          description: Start of billing period (required if rideIds not provided)
+          example: "2026-01-01T00:00:00Z"
+        billingPeriodEnd:
+          type: string
+          format: date-time
+          description: End of billing period (required if rideIds not provided)
+          example: "2026-01-31T23:59:59Z"
+        rideIds:
+          type: array
+          description: Specific ride IDs to include (use instead of date range)
+          items:
+            type: string
+          example: ["R-12345", "R-12346"]
+      oneOf:
+        - required: [billingPeriodStart, billingPeriodEnd]
+        - required: [rideIds]
+
+    InvoiceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique invoice identifier
+          example: "i1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"
+        invoiceNumber:
+          type: string
+          description: Invoice number (unique per tenant)
+          example: "INV-2026-001"
+        accountId:
+          type: string
+          format: uuid
+          description: Account identifier
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        accountName:
+          type: string
+          description: Account display name
+          example: "Metro Rehab Center"
+        billingPeriodStart:
+          type: string
+          format: date-time
+          description: Billing period start
+          example: "2026-01-01T00:00:00Z"
+        billingPeriodEnd:
+          type: string
+          format: date-time
+          description: Billing period end
+          example: "2026-01-31T23:59:59Z"
+        lineItems:
+          type: array
+          description: Individual ride charges
+          items:
+            $ref: '#/components/schemas/InvoiceLineItemDto'
+        subtotal:
+          type: number
+          format: decimal
+          description: Sum of all line items
+          example: 175.50
+        paymentsApplied:
+          type: number
+          format: decimal
+          description: Total payments applied during billing period
+          example: 50.00
+        outstandingBalance:
+          type: number
+          format: decimal
+          description: Amount due (subtotal - payments)
+          example: 125.50
+        currency:
+          type: string
+          description: Currency code
+          example: "USD"
+        generatedAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when invoice was created
+          example: "2026-02-06T15:00:00Z"
+        generatedBy:
+          type: string
+          description: User or system that generated the invoice
+          example: "billing-system"
+
+    InvoiceSummaryDto:
+      type: object
+      description: Abbreviated invoice information for list views
+      properties:
+        invoiceNumber:
+          type: string
+          example: "INV-2026-001"
+        accountId:
+          type: string
+          format: uuid
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        accountName:
+          type: string
+          example: "Metro Rehab Center"
+        billingPeriodStart:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        billingPeriodEnd:
+          type: string
+          format: date-time
+          example: "2026-01-31T23:59:59Z"
+        subtotal:
+          type: number
+          format: decimal
+          example: 175.50
+        outstandingBalance:
+          type: number
+          format: decimal
+          example: 125.50
+        generatedAt:
+          type: string
+          format: date-time
+          example: "2026-02-06T15:00:00Z"
+
+    InvoiceLineItemDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Line item identifier
+          example: "li1a2b3c-d4e5-6f7a-8b9c-0d1e2f3a4b5c"
+        rideId:
+          type: string
+          description: External ride reference
+          example: "R-12345"
+        serviceDate:
+          type: string
+          format: date-time
+          description: Date ride occurred
+          example: "2026-01-05T14:30:00Z"
+        amount:
+          type: number
+          format: decimal
+          description: Ride fare
+          example: 25.00
+        description:
+          type: string
+          nullable: true
+          description: Ride description
+          example: "Ride from 123 Main St to 456 Oak Ave"
+        ledgerEntryId:
+          type: string
+          format: uuid
+          description: Reference to source ledger entry (for traceability)
+          example: "l1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+
+    PaginationMetadata:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        totalCount:
+          type: integer
+          example: 15
+        totalPages:
+          type: integer
+          example: 1
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'

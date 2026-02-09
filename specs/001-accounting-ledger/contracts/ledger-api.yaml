@@ -1,0 +1,495 @@
+openapi: 3.0.3
+info:
+  title: Accounting Service - Ledger API
+  description: Ledger operations for recording ride charges, payments, and querying account balances/statements
+  version: 1.0.0
+  contact:
+    name: Platform Team
+
+servers:
+  - url: https://api.platform.example.com/accounting/v1
+    description: Production
+  - url: https://api-dev.platform.example.com/accounting/v1
+    description: Development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /ledger/charges:
+    post:
+      summary: Record a ride charge
+      description: Records a completed ride charge to an account using double-entry accounting (debit AR, credit Revenue). Idempotent per ride ID.
+      operationId: recordRideCharge
+      tags:
+        - Ledger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordChargeRequest'
+      responses:
+        '201':
+          description: Ride charge recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerTransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Account not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Duplicate ride charge (idempotency violation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: "https://api.platform.example.com/problems/conflict"
+                title: "Duplicate Ride Charge"
+                status: 409
+                detail: "Ride 'R-12345' has already been charged to account 'a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d'"
+                traceId: "00-abc123-def456-01"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /ledger/payments:
+    post:
+      summary: Record a payment
+      description: Records a payment received from a customer using double-entry accounting (debit Cash, credit AR). Supports partial, full, and overpayments.
+      operationId: recordPayment
+      tags:
+        - Ledger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPaymentRequest'
+      responses:
+        '201':
+          description: Payment recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerTransactionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /accounts/{accountId}/balance:
+    get:
+      summary: Get account balance
+      description: Calculates current account balance (Total Debits - Total Credits) for the specified account
+      operationId: getAccountBalance
+      tags:
+        - Ledger
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Account balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /accounts/{accountId}/statements:
+    get:
+      summary: Get account statement
+      description: Retrieves account statement for a date range showing opening balance, transactions, and closing balance
+      operationId: getAccountStatement
+      tags:
+        - Ledger
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: startDate
+          in: query
+          required: true
+          description: Statement start date (inclusive, ISO 8601 format)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-01-01T00:00:00Z"
+        - name: endDate
+          in: query
+          required: true
+          description: Statement end date (inclusive, ISO 8601 format)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-01-31T23:59:59Z"
+        - name: page
+          in: query
+          description: Page number for transaction list (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          description: Number of transactions per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Account statement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementResponse'
+        '400':
+          description: Invalid date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: Unique account identifier (UUID)
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    RecordChargeRequest:
+      type: object
+      required:
+        - accountId
+        - rideId
+        - fareAmount
+        - serviceDate
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Account to charge
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        rideId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Unique ride identifier (external reference)
+          example: "R-12345"
+        fareAmount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Ride fare amount in USD
+          example: 25.00
+        serviceDate:
+          type: string
+          format: date-time
+          description: Date the ride occurred (UTC)
+          example: "2026-02-05T14:30:00Z"
+        fleetId:
+          type: string
+          nullable: true
+          description: Optional fleet identifier (metadata)
+          example: "fleet-001"
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Optional human-readable description
+          example: "Ride from 123 Main St to 456 Oak Ave"
+
+    RecordPaymentRequest:
+      type: object
+      required:
+        - accountId
+        - paymentReferenceId
+        - amount
+        - paymentDate
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Account receiving payment
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        paymentReferenceId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Unique payment identifier (external reference, e.g., Stripe payment ID)
+          example: "pay_abc123xyz"
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Payment amount in USD (supports partial, full, and overpayments)
+          example: 25.00
+        paymentDate:
+          type: string
+          format: date-time
+          description: Date payment was received (UTC)
+          example: "2026-02-06T10:00:00Z"
+        paymentMode:
+          type: string
+          nullable: true
+          description: Optional payment method (e.g., Credit Card, Bank Transfer, Check)
+          example: "Credit Card"
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Optional notes
+          example: "Payment via Stripe"
+
+    LedgerTransactionResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: Unique identifier for this transaction (not individual ledger entry IDs)
+          example: "t1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c"
+        accountId:
+          type: string
+          format: uuid
+          description: Account affected by transaction
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        entries:
+          type: array
+          description: Ledger entries created (always 2 for double-entry)
+          items:
+            $ref: '#/components/schemas/LedgerEntryDto'
+        newBalance:
+          type: number
+          format: decimal
+          description: Account balance after transaction
+          example: 50.00
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC timestamp when transaction was recorded
+          example: "2026-02-06T14:45:00Z"
+
+    LedgerEntryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique ledger entry identifier
+          example: "l1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        ledgerAccount:
+          type: string
+          enum: [AccountsReceivable, ServiceRevenue, Cash]
+          description: Which account in the ledger was affected
+          example: "AccountsReceivable"
+        debitAmount:
+          type: number
+          format: decimal
+          description: Amount debited (0 if credit)
+          example: 25.00
+        creditAmount:
+          type: number
+          format: decimal
+          description: Amount credited (0 if debit)
+          example: 0.00
+
+    BalanceResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Account identifier
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        accountName:
+          type: string
+          description: Account display name
+          example: "Metro Rehab Center"
+        balance:
+          type: number
+          format: decimal
+          description: Current balance (positive = amount owed, negative = credit balance)
+          example: 125.50
+        currency:
+          type: string
+          description: Currency code
+          example: "USD"
+        asOf:
+          type: string
+          format: date-time
+          description: UTC timestamp when balance was calculated
+          example: "2026-02-06T14:50:00Z"
+
+    StatementResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          description: Account identifier
+          example: "a1b2c3d4-e5f6-4a5b-9c8d-7e6f5a4b3c2d"
+        accountName:
+          type: string
+          description: Account display name
+          example: "Metro Rehab Center"
+        periodStart:
+          type: string
+          format: date-time
+          description: Statement period start date
+          example: "2026-01-01T00:00:00Z"
+        periodEnd:
+          type: string
+          format: date-time
+          description: Statement period end date
+          example: "2026-01-31T23:59:59Z"
+        openingBalance:
+          type: number
+          format: decimal
+          description: Account balance at period start
+          example: 0.00
+        closingBalance:
+          type: number
+          format: decimal
+          description: Account balance at period end
+          example: 175.50
+        transactions:
+          type: array
+          description: List of transactions in chronological order
+          items:
+            $ref: '#/components/schemas/StatementTransactionDto'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    StatementTransactionDto:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: Transaction date (UTC)
+          example: "2026-01-05T14:30:00Z"
+        type:
+          type: string
+          enum: [RideCharge, Payment]
+          description: Transaction type
+          example: "RideCharge"
+        referenceId:
+          type: string
+          description: External reference (Ride ID or Payment ID)
+          example: "R-12345"
+        amount:
+          type: number
+          format: decimal
+          description: Transaction amount (positive for charges, negative for payments in statement context)
+          example: 25.00
+        runningBalance:
+          type: number
+          format: decimal
+          description: Account balance after this transaction
+          example: 25.00
+        description:
+          type: string
+          nullable: true
+          description: Optional transaction description
+          example: "Ride from 123 Main St to 456 Oak Ave"
+
+    PaginationMetadata:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 50
+        totalCount:
+          type: integer
+          example: 23
+        totalPages:
+          type: integer
+          example: 1
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
