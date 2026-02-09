@@ -1,0 +1,83 @@
+# T150: Docker ignore file
+# Exclude unnecessary files from Docker build context
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*.swo
+*~
+
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+**/dist/
+**/build/
+
+# NuGet
+**/packages/
+*.nupkg
+*.snupkg
+.nuget/
+
+# Test results
+**/TestResults/
+**/*.trx
+**/*.coverage
+**/*.coveragexml
+
+# Logs
+**/*.log
+**/logs/
+*.log.*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Documentation
+docs/
+README.md
+LICENSE
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+.circleci/
+
+# Docker
+docker-compose*.yml
+**/Dockerfile
+**/.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary
+**/*.tmp
+**/*.temp
+**/*.bak
+**/*.cache
+
+# Specification and planning
+specs/
+prerequists/
+.specify/
+
+# Editor config (keep for consistent formatting)
+# .editorconfig

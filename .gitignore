@@ -1,0 +1,162 @@
+# .NET / C# Ignore File
+
+## Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio cache/options
+.vs/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## Build Results
+*.dll
+*.exe
+*.pdb
+*.cache
+
+## NuGet Packages
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+coverage/
+*.coverage
+*.coveragexml
+
+## .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Entity Framework Migrations (keep migrations, ignore generated files)
+**/Migrations/*.Designer.cs
+
+## Rider
+.idea/
+*.sln.iml
+
+## User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Mono Auto Generated Files
+mono_crash.*
+
+## Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+## Folder config file
+Desktop.ini
+
+## Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+## Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+## Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+## Temporary files
+*.tmp
+*.swp
+*~
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## Docker
+docker-compose.override.yml
+
+## Azure Functions
+local.settings.json
+
+## ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+## Publish profiles
+PublishScripts/
+*.pubxml
+*.publishsettings
+
+## SQL Server files
+*.mdf
+*.ldf
+*.ndf
+
+## Database
+*.db
+*.sqlite
+*.sqlite3
+
+## Package Manager
+paket-files/
+
+## FAKE
+.fake/
+
+## JetBrains Rider
+*.swiftpm
+
+## Backup & report files from converting old project file
+_UpgradeReport_Files/
+Backup*/
+UpgradeLog*.XML
+UpgradeLog*.htm
+ServiceFabricBackup/
+*.rptproj.bak
+
+## Node (in case of frontend development)
+node_modules/
+dist/
+build/
+
+## Speckit generated files (keep specs, ignore workspace temporary files)
+# Keep .specify/ and specs/ directories for project governance
