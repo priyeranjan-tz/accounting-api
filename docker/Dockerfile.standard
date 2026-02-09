@@ -1,0 +1,47 @@
+# Standard multi-stage Dockerfile (non-AOT)
+# Use this for full compatibility with all dependencies including Swashbuckle
+# For Native AOT version, see Dockerfile (may require Swagger configuration)
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0-alpine AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["Accounting.sln", "./"]
+COPY ["src/Accounting.API/Accounting.API.csproj", "src/Accounting.API/"]
+COPY ["src/Accounting.Application/Accounting.Application.csproj", "src/Accounting.Application/"]
+COPY ["src/Accounting.Domain/Accounting.Domain.csproj", "src/Accounting.Domain/"]
+COPY ["src/Accounting.Infrastructure/Accounting.Infrastructure.csproj", "src/Accounting.Infrastructure/"]
+
+# Restore dependencies
+RUN dotnet restore "src/Accounting.API/Accounting.API.csproj"
+
+# Copy source code
+COPY ["src/", "src/"]
+
+# Build and publish
+RUN dotnet publish "src/Accounting.API/Accounting.API.csproj" \
+    -c Release \
+    -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine AS runtime
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 appgroup && \
+    adduser -D -u 1001 -G appgroup appuser && \
+    chown -R appuser:appgroup /app
+
+COPY --from=build --chown=appuser:appgroup /app/publish .
+
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+ENV ASPNETCORE_URLS=http://+:8080 \
+    ASPNETCORE_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "Accounting.API.dll"]

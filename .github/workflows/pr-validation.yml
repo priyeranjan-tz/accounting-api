@@ -1,0 +1,177 @@
+# T151: Pull Request Validation Workflow
+# Fast feedback for pull requests with essential checks
+
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '**.csproj'
+      - '**.sln'
+      - '.github/workflows/**'
+
+# Cancel in-progress runs when new commits are pushed
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+jobs:
+  # ============================================================
+  # Quick validation checks
+  # ============================================================
+  validate:
+    name: Quick Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Check code formatting
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+      - name: Build solution
+        run: dotnet build --no-restore --configuration Debug
+
+      - name: Run contract tests
+        run: dotnet test tests/Accounting.ContractTests --no-build --configuration Debug --filter "Category=Contract"
+
+      - name: Run integration tests  
+        run: dotnet test tests/Accounting.IntegrationTests --no-build --configuration Debug --filter "Category=Integration"
+
+  # ============================================================
+  # PR size and quality checks
+  # ============================================================
+  pr-checks:
+    name: PR Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        run: |
+          FILES_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          LINES_CHANGED=$(git diff --shortstat origin/${{ github.base_ref }}...HEAD | grep -oE '[0-9]+ insertions?' | grep -oE '[0-9]+' || echo 0)
+          
+          echo "📊 PR Statistics:"
+          echo "- Files changed: $FILES_CHANGED"
+          echo "- Lines changed: $LINES_CHANGED"
+          
+          if [ $FILES_CHANGED -gt 50 ]; then
+            echo "⚠️ Warning: Large PR with $FILES_CHANGED files. Consider splitting into smaller PRs."
+          fi
+          
+          if [ $LINES_CHANGED -gt 1000 ]; then
+            echo "⚠️ Warning: Large changeset with $LINES_CHANGED lines. Consider splitting."
+          fi
+
+      - name: Check for TODO/FIXME comments
+        run: |
+          if grep -r "TODO\|FIXME" src/ --include="*.cs" > todos.txt; then
+            echo "⚠️ Found TODO/FIXME comments:"
+            cat todos.txt
+          else
+            echo "✅ No TODO/FIXME comments found"
+          fi
+
+      - name: Validate commit messages
+        run: |
+          COMMITS=$(git log --format=%s origin/${{ github.base_ref }}..HEAD)
+          echo "📝 Commit messages:"
+          echo "$COMMITS"
+
+  # ============================================================
+  # Security checks
+  # ============================================================
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Check for vulnerable packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
+          if grep -q "has the following vulnerable packages" vulnerable-packages.txt; then
+            echo "❌ Vulnerable packages detected"
+            exit 1
+          else
+            echo "✅ No vulnerable packages found"
+          fi
+
+      - name: Check for hardcoded secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Comment PR with results
+  # ============================================================
+  comment:
+    name: PR Comment
+    runs-on: ubuntu-latest
+    needs: [validate, pr-checks, security]
+    if: always()
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const validation = '${{ needs.validate.result }}';
+            const quality = '${{ needs.pr-checks.result }}';
+            const security = '${{ needs.security.result }}';
+            
+            const allPassed = validation === 'success' && security === 'success';
+            const icon = allPassed ? '✅' : '❌';
+            
+            const body = `## ${icon} PR Validation Results
+            
+            | Check | Status |
+            |-------|--------|
+            | Build & Tests | ${validation === 'success' ? '✅ Passed' : '❌ Failed'} |
+            | Quality Checks | ${quality === 'success' ? '✅ Passed' : '⚠️ Warnings'} |
+            | Security Scan | ${security === 'success' ? '✅ Passed' : '❌ Failed'} |
+            
+            ${allPassed ? '**Ready for review!** 🎉' : '**Please address the failing checks above.**'}
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
