@@ -324,6 +324,26 @@ app.MapAccountEndpoints();
 app.MapInvoiceEndpoints();
 
 // ============================================================================
+// Database initialization - Apply migrations on startup
+// ============================================================================
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var dbContext = services.GetRequiredService<AccountingDbContext>();
+        Log.Information("Applying database migrations...");
+        dbContext.Database.Migrate();
+        Log.Information("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "An error occurred while migrating the database");
+        throw;
+    }
+}
+
+// ============================================================================
 // Run application
 // ============================================================================
 try
